@@ -106,7 +106,7 @@ int main(int argc, char const *argv[])
 		t.start = 3.0 / n * i;
 		t.fin = t.start + 3.0 / n;
 
-		printf("%f\n", t.fin);
+		//printf("%f\n", t.fin);
 
 		write(arr_fd[i].fd, &t, sizeof(t));
 
@@ -140,7 +140,7 @@ int main(int argc, char const *argv[])
 
 		int result = 0;
 
-		printf("%d\n", nfds);
+		//printf("%d\n", nfds);
 		if ((result = select(nfds + 1, &srd, NULL, NULL, &t)) == 0)
 		{
 			for (j = 0; j < n; ++j)
