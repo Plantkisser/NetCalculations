@@ -6,6 +6,8 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <sys/select.h>
+#include <signal.h>
+#include <netinet/tcp.h>
 
 
 
@@ -56,6 +58,14 @@ int main(int argc, char const *argv[])
 
 
 
+
+	sigset_t set;
+	sigemptyset(&set);
+	sigaddset(&set, SIGPIPE);
+	sigprocmask(SIG_BLOCK, &set, NULL);
+
+
+
 	int broadcast_fd = socket(AF_INET, SOCK_DGRAM, 0);
 	int broadcastFl = 1;
 	setsockopt(broadcast_fd, SOL_SOCKET, SO_BROADCAST, &broadcastFl, sizeof(broadcastFl));
@@ -101,7 +111,13 @@ int main(int argc, char const *argv[])
 	{
 		int l = 0;
 		arr_fd[i].fd = accept(arr_sk, NULL, NULL);
-
+		setsockopt(arr_fd[i].fd, SOL_SOCKET, SO_KEEPALIVE, &broadcastFl, sizeof(broadcastFl));
+		int intvl = 5;
+		setsockopt(arr_fd[i].fd, SOL_SOCKET, TCP_KEEPINTVL, &intvl, sizeof(int));
+		int probes = 2;
+		setsockopt(arr_fd[i].fd, SOL_SOCKET, TCP_KEEPCNT, &probes, sizeof(int));
+		int timeout = 20;
+		setsockopt(arr_fd[i].fd, SOL_SOCKET, TCP_KEEPIDLE, &timeout, sizeof(int));
 		struct Task t;
 		t.start = 3.0 / n * i;
 		t.fin = t.start + 3.0 / n;
@@ -123,76 +139,56 @@ int main(int argc, char const *argv[])
 
 	while(counter != n)
 	{
-		FD_ZERO(&srd);
-		for(i = 0; i < n; i++)
-		{ 
-			if (arr_fd[i].is_alive != DEAD)
-				FD_SET(arr_fd[i].fd, &srd);
-		}
-
-
-
-
-		int j = 0;
-		struct timeval t;
-		t.tv_sec = 30;
-		t.tv_usec = 0;
-
-		int result = 0;
-
-		//printf("%d\n", nfds);
-		if ((result = select(nfds + 1, &srd, NULL, NULL, &t)) == 0)
+		for (i = 0; i < n; ++i)
 		{
-			for (j = 0; j < n; ++j)
+			if (arr_fd[i].is_alive == DEAD) continue;
+			double ans;
+			int result = read(arr_fd[i].fd, &ans, sizeof(ans));
+			if (result == -1 || result == 0)
 			{
-				if (arr_task[j] != DONE)
+				arr_fd[i].is_alive = DEAD;
+				int l = 0;
+				for (l = 0; l < n; l++)
 				{
-					arr_fd[arr_task[j]].is_alive = DEAD;
-					int l = 0;
-					int fl = 0;
-					for (l = 0; l < n; ++l)
+					if (i == arr_task[l])
 					{
-						if (arr_fd[l].is_alive == LIVE)
+						int j = 0;
+						int fl = 0;
+						for (j = 0; j < n; ++j)
 						{
-							struct Task t;
-							t.start = 3.0 / n * j;
-							t.fin = t.start + 3.0 / n;
-
-							write(arr_fd[l].fd, &t, sizeof(t));
-							fl = 1;
-							arr_task[j] = l;
+							if (arr_fd[j].is_alive == LIVE)
+							{
+								struct Task t;
+								t.start = 3.0 / n * i;
+								t.fin = t.start + 3.0 / n;
+								write(arr_fd[j].fd, &t, sizeof(t));
+								arr_task[l] = j; 
+							}
 						}
-					}
-
-					if (!fl)
-					{
-						printf("All workers are dead\n");
-						return 0;
+						if (fl == 0)
+						{
+							printf("All workers are disconnected\n");
+							return 0;
+						}
 					}
 				}
 			}
-		}
-
-		for (j = 0; j < n; ++j)
-		{
-			if (FD_ISSET(arr_fd[j].fd, &srd))
+			else
 			{
-				double ans;
-				if (read(arr_fd[j].fd, &ans, sizeof(ans)) == 0)
-				{
-					arr_fd[j].is_alive = DEAD;
-					break;
-				} 
-				res += ans;
-				arr_task[j] = DONE;
 				counter++;
+				res += ans;
 			}
+			printf("***\n");
 		}
-		printf("%d\n", result);
-
 	}
-/**/
+	shutdown(arr_sk, SHUT_RDWR);
 
+
+/**/
+	for(i = 0; i < n; i++)
+	{
+		shutdown(arr_fd[i].fd, SHUT_RDWR);
+	}
 
 	printf("%.3f\n", res);
 
