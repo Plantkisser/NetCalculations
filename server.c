@@ -27,7 +27,7 @@ struct Task
 
 struct Fd
 {
-	int fd, is_alive;
+	int fd, is_alive, weight;
 };
 
 
@@ -36,6 +36,8 @@ int main(int argc, char const *argv[])
 	if (argc != 2)
 	{
 		printf("Wrong arguments\n");
+
+		return 0;
 	}
 	int n = strtol(argv[1], NULL, 10);
 
@@ -107,6 +109,8 @@ int main(int argc, char const *argv[])
 
 	int nfds = 0;
 
+	int threads = 0;
+
 	for(i = 0; i < n; ++i)
 	{
 		int l = 0;
@@ -119,9 +123,20 @@ int main(int argc, char const *argv[])
 		setsockopt(arr_fd[i].fd, IPPROTO_TCP, TCP_KEEPCNT, &probes, sizeof(int));
 		int timeout = 20;
 		setsockopt(arr_fd[i].fd, IPPROTO_TCP, TCP_KEEPIDLE, &timeout, sizeof(int));
+
+		read(arr_fd[i].fd, &arr_fd[i].weight, sizeof(int));
+
+		threads += arr_fd[i].weight;
+	}
+
+
+	double next = 0;
+	for(i = 0; i < n; ++i)
+	{
 		struct Task t;
-		t.start = 3.0 / n * i;
-		t.fin = t.start + 3.0 / n;
+		t.start = next;
+		t.fin = next + 3.0 * arr_fd[i].weight / threads;
+		next += 3.0 * arr_fd[i].weight / threads;
 
 		//printf("%f\n", t.fin);
 

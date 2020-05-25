@@ -13,6 +13,7 @@
 #include <netinet/ip.h>
 #include <string.h>
 #include <unistd.h>
+#include <netinet/tcp.h>
 
 #define N_CORES 6
 
@@ -171,7 +172,17 @@ int main(int argc, char const *argv[])
 	perror("fcntl");
 	connect(sk, (struct sockaddr*) &s_send, len);
 	perror("connect");
-	if (setsockopt(sk, SOL_SOCKET, SO_KEEPALIVE, &broadcatFl, sizeof(broadcatFl)) < 0);
+
+	int broadcastFl = 1;
+	setsockopt(sk, SOL_SOCKET, SO_KEEPALIVE, &broadcastFl, sizeof(broadcastFl));
+	int intvl = 5;
+	setsockopt(sk, IPPROTO_TCP, TCP_KEEPINTVL, &intvl, sizeof(int));
+	int probes = 2;
+	setsockopt(sk, IPPROTO_TCP, TCP_KEEPCNT, &probes, sizeof(int));
+	int timeout = 20;
+	setsockopt(sk, IPPROTO_TCP, TCP_KEEPIDLE, &timeout, sizeof(int));
+
+	write(sk, &n, sizeof(n));
 
 	struct Task t;
 	
@@ -182,6 +193,7 @@ int main(int argc, char const *argv[])
 
 	while(read(sk, &t, sizeof(t)) != 0)
 	{
+		printf("%f\n", t.fin);
 
 		struct CalcStr* mem = (struct CalcStr*) calloc (2 * n, sizeof(struct CalcStr));
 		if (!mem)
