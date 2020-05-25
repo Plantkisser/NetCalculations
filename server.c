@@ -110,14 +110,15 @@ int main(int argc, char const *argv[])
 	for(i = 0; i < n; ++i)
 	{
 		int l = 0;
+		broadcastFl = 1;
 		arr_fd[i].fd = accept(arr_sk, NULL, NULL);
 		setsockopt(arr_fd[i].fd, SOL_SOCKET, SO_KEEPALIVE, &broadcastFl, sizeof(broadcastFl));
 		int intvl = 5;
-		setsockopt(arr_fd[i].fd, SOL_SOCKET, TCP_KEEPINTVL, &intvl, sizeof(int));
+		setsockopt(arr_fd[i].fd, IPPROTO_TCP, TCP_KEEPINTVL, &intvl, sizeof(int));
 		int probes = 2;
-		setsockopt(arr_fd[i].fd, SOL_SOCKET, TCP_KEEPCNT, &probes, sizeof(int));
+		setsockopt(arr_fd[i].fd, IPPROTO_TCP, TCP_KEEPCNT, &probes, sizeof(int));
 		int timeout = 20;
-		setsockopt(arr_fd[i].fd, SOL_SOCKET, TCP_KEEPIDLE, &timeout, sizeof(int));
+		setsockopt(arr_fd[i].fd, IPPROTO_TCP, TCP_KEEPIDLE, &timeout, sizeof(int));
 		struct Task t;
 		t.start = 3.0 / n * i;
 		t.fin = t.start + 3.0 / n;
@@ -131,6 +132,7 @@ int main(int argc, char const *argv[])
 		arr_task[i] = i;
 		arr_fd[i].is_alive = LIVE;
 	}
+	perror("Set");
 
 	fd_set srd;
 
