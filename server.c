@@ -25,9 +25,9 @@ struct Task
 	double start, fin;
 };
 
-struct Fd
+struct Socket
 {
-	int fd, is_alive, weight;
+	int fd_in, fd_out, is_alive, weight;
 };
 
 
@@ -44,7 +44,7 @@ int main(int argc, char const *argv[])
 	int i = 0;
 
 
-	struct Fd* arr_fd = calloc(n, sizeof(struct Fd));
+	struct Socket* arr_fd = calloc(n, sizeof(struct Socket));
 	if (arr_fd == NULL)
 	{
 		printf("Error creating array\n");
@@ -93,21 +93,20 @@ int main(int argc, char const *argv[])
 
 
 	struct sockaddr_in s_send;
-	memset(&s_broad, 0, sizeof(s_send));
+	memset(&s_send, 0, sizeof(s_send));
 	s_send.sin_family = AF_INET;
 	s_send.sin_port = htons(port);
 	s_send.sin_addr.s_addr = INADDR_ANY;
 
 
-	int arr_sk = 0;
-	arr_sk = socket(AF_INET, SOCK_STREAM, 0);
-	setsockopt(arr_sk, SOL_SOCKET, SO_REUSEADDR, &broadcastFl, sizeof(broadcastFl));
-	bind(arr_sk, (struct sockaddr*) &s_send, sizeof(s_send));
-	listen(arr_sk, 1000);
+	int lst_sk = 0;
+	lst_sk = socket(AF_INET, SOCK_STREAM, 0);
+	setsockopt(lst_sk, SOL_SOCKET, SO_REUSEADDR, &broadcastFl, sizeof(broadcastFl));
+	bind(lst_sk, (struct sockaddr*) &s_send, sizeof(s_send));
+	listen(lst_sk, 1000);
 
 
 
-	int nfds = 0;
 
 	int threads = 0;
 
@@ -115,16 +114,41 @@ int main(int argc, char const *argv[])
 	{
 		int l = 0;
 		broadcastFl = 1;
-		arr_fd[i].fd = accept(arr_sk, NULL, NULL);
-		setsockopt(arr_fd[i].fd, SOL_SOCKET, SO_KEEPALIVE, &broadcastFl, sizeof(broadcastFl));
-		int intvl = 5;
-		setsockopt(arr_fd[i].fd, IPPROTO_TCP, TCP_KEEPINTVL, &intvl, sizeof(int));
-		int probes = 2;
-		setsockopt(arr_fd[i].fd, IPPROTO_TCP, TCP_KEEPCNT, &probes, sizeof(int));
-		int timeout = 20;
-		setsockopt(arr_fd[i].fd, IPPROTO_TCP, TCP_KEEPIDLE, &timeout, sizeof(int));
 
-		read(arr_fd[i].fd, &arr_fd[i].weight, sizeof(int));
+
+		struct sockaddr_in s_work;
+		int len = sizeof(s_work);
+
+
+
+		arr_fd[i].fd_in = accept(lst_sk, (struct sockaddr*) &s_work, &len);
+		s_work.sin_port = port;
+
+		setsockopt(arr_fd[i].fd_in, SOL_SOCKET, SO_KEEPALIVE, &broadcastFl, sizeof(broadcastFl));
+		int intvl = 5;
+		setsockopt(arr_fd[i].fd_in, IPPROTO_TCP, TCP_KEEPINTVL, &intvl, sizeof(int));
+		int probes = 2;
+		setsockopt(arr_fd[i].fd_in, IPPROTO_TCP, TCP_KEEPCNT, &probes, sizeof(int));
+		int timeout = 20;
+		setsockopt(arr_fd[i].fd_in, IPPROTO_TCP, TCP_KEEPIDLE, &timeout, sizeof(int));
+
+
+		shutdown(arr_fd[i].fd_in, SHUT_WR);
+		perror("Set");
+
+		arr_fd[i].fd_out = socket(AF_INET, SOCK_STREAM, 0);
+		connect(arr_fd[i].fd_out, (struct sockaddr*) &s_work, len);
+		perror("Set");
+
+		setsockopt(arr_fd[i].fd_out, SOL_SOCKET, SO_KEEPALIVE, &broadcastFl, sizeof(broadcastFl));
+		setsockopt(arr_fd[i].fd_out, IPPROTO_TCP, TCP_KEEPINTVL, &intvl, sizeof(int));
+		setsockopt(arr_fd[i].fd_out, IPPROTO_TCP, TCP_KEEPCNT, &probes, sizeof(int));
+		setsockopt(arr_fd[i].fd_out, IPPROTO_TCP, TCP_KEEPIDLE, &timeout, sizeof(int));		
+
+		shutdown(arr_fd[i].fd_out, SHUT_RD);
+
+
+		read(arr_fd[i].fd_in, &arr_fd[i].weight, sizeof(int));
 
 		threads += arr_fd[i].weight;
 	}
@@ -140,27 +164,29 @@ int main(int argc, char const *argv[])
 
 		//printf("%f\n", t.fin);
 
-		write(arr_fd[i].fd, &t, sizeof(t));
+		write(arr_fd[i].fd_out, &t, sizeof(t));
 
 
-		nfds = nfds > arr_fd[i].fd? nfds : arr_fd[i].fd;
 		arr_task[i] = i;
 		arr_fd[i].is_alive = LIVE;
 	}
-	perror("Set");
 
 	fd_set srd;
 
-	int counter = 0;
+	int counter = 0; // used to count complete tasks
 	double res = 0;
 
 	while(counter != n)
 	{
 		for (i = 0; i < n; ++i)
 		{
-			if (arr_fd[i].is_alive == DEAD) continue;
+			if (arr_fd[i].is_alive == DEAD) 
+			{
+				printf("SKIP\n");
+				continue;
+			}
 			double ans;
-			int result = read(arr_fd[i].fd, &ans, sizeof(ans));
+			int result = read(arr_fd[i].fd_in, &ans, sizeof(ans));
 			if (result == -1 || result == 0)
 			{
 				arr_fd[i].is_alive = DEAD;
@@ -173,13 +199,23 @@ int main(int argc, char const *argv[])
 						int fl = 0;
 						for (j = 0; j < n; ++j)
 						{
+							//printf("%d\n", j);
 							if (arr_fd[j].is_alive == LIVE)
 							{
+								double next = 0;
+								int ii = 0;
+								fl = 1;
+								for (ii = 0; ii < l; ++ii)
+									next += 3.0 * arr_fd[ii].weight / threads;
+
+
 								struct Task t;
-								t.start = 3.0 / n * i;
-								t.fin = t.start + 3.0 / n;
-								write(arr_fd[j].fd, &t, sizeof(t));
-								arr_task[l] = j; 
+								t.start = next;
+								t.fin = t.start + 3.0 * arr_fd[l].weight / threads; // weigth of the i'th task is same as weight of i'th fd
+								write(arr_fd[j].fd_out, &t, sizeof(t));
+								printf("write %d\n", i);
+								arr_task[l] = j;
+								break; 
 							}
 						}
 						if (fl == 0)
@@ -195,16 +231,17 @@ int main(int argc, char const *argv[])
 				counter++;
 				res += ans;
 			}
-			printf("***\n");
+			printf("**%d\n", i);
 		}
 	}
-	shutdown(arr_sk, SHUT_RDWR);
+	shutdown(lst_sk, SHUT_RDWR);
 
 
 /**/
 	for(i = 0; i < n; i++)
 	{
-		shutdown(arr_fd[i].fd, SHUT_RDWR);
+		shutdown(arr_fd[i].fd_in, SHUT_RD);
+		shutdown(arr_fd[i].fd_out, SHUT_WR);
 	}
 
 	printf("%.3f\n", res);

@@ -156,7 +156,7 @@ int main(int argc, char const *argv[])
 	perror("recv");
 
 	s_send.sin_family = AF_INET;
-	s_send.sin_port = htons(50000);
+	s_send.sin_port = htons(port);
 
 
 
@@ -168,21 +168,55 @@ int main(int argc, char const *argv[])
 
 
 
-	int sk = socket(AF_INET, SOCK_STREAM, 0);
+	int sk_out = socket(AF_INET, SOCK_STREAM, 0);
 	perror("fcntl");
-	connect(sk, (struct sockaddr*) &s_send, len);
+	connect(sk_out, (struct sockaddr*) &s_send, len);
 	perror("connect");
 
 	int broadcastFl = 1;
-	setsockopt(sk, SOL_SOCKET, SO_KEEPALIVE, &broadcastFl, sizeof(broadcastFl));
+	setsockopt(sk_out, SOL_SOCKET, SO_KEEPALIVE, &broadcastFl, sizeof(broadcastFl));
 	int intvl = 5;
-	setsockopt(sk, IPPROTO_TCP, TCP_KEEPINTVL, &intvl, sizeof(int));
+	setsockopt(sk_out, IPPROTO_TCP, TCP_KEEPINTVL, &intvl, sizeof(int));
 	int probes = 2;
-	setsockopt(sk, IPPROTO_TCP, TCP_KEEPCNT, &probes, sizeof(int));
+	setsockopt(sk_out, IPPROTO_TCP, TCP_KEEPCNT, &probes, sizeof(int));
 	int timeout = 20;
-	setsockopt(sk, IPPROTO_TCP, TCP_KEEPIDLE, &timeout, sizeof(int));
+	setsockopt(sk_out, IPPROTO_TCP, TCP_KEEPIDLE, &timeout, sizeof(int));
 
-	write(sk, &n, sizeof(n));
+	shutdown(sk_out, SHUT_RD);
+	write(sk_out, &n, sizeof(n));
+
+
+
+
+	struct sockaddr_in addr;
+	memset(&addr, 0, sizeof(s_send));
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(port);
+	addr.sin_addr.s_addr = INADDR_ANY;
+
+
+	int lst_sk = 0;
+	lst_sk = socket(AF_INET, SOCK_STREAM, 0);
+	setsockopt(lst_sk, SOL_SOCKET, SO_REUSEADDR, &broadcastFl, sizeof(broadcastFl));
+	bind(lst_sk, (struct sockaddr*) &addr, sizeof(addr));
+	listen(lst_sk, 1000);
+	perror("listen");
+
+	int sk_in = accept(lst_sk, NULL, NULL);
+	setsockopt(sk_out, SOL_SOCKET, SO_KEEPALIVE, &broadcastFl, sizeof(broadcastFl));
+	setsockopt(sk_out, IPPROTO_TCP, TCP_KEEPINTVL, &intvl, sizeof(int));
+	setsockopt(sk_out, IPPROTO_TCP, TCP_KEEPCNT, &probes, sizeof(int));
+	setsockopt(sk_out, IPPROTO_TCP, TCP_KEEPIDLE, &timeout, sizeof(int));
+
+
+	shutdown(sk_in, SHUT_WR);
+
+
+
+
+
+
+
 
 	struct Task t;
 	
@@ -191,7 +225,7 @@ int main(int argc, char const *argv[])
 
 	//++++++++++++++++++++
 
-	while(read(sk, &t, sizeof(t)) != 0)
+	while(read(sk_in, &t, sizeof(t)) != 0)
 	{
 		printf("%f\n", t.fin);
 
@@ -219,7 +253,10 @@ int main(int argc, char const *argv[])
 		double step = (t.fin - t.start) / n;
 		double start = t.start;
 		double res = 0;
-		double delta = 2.0 / 100000000;
+		double delta = 2.0 / 10000000; //0
+
+
+		sleep(3);
 
 
 		int sem_id = semget(IPC_PRIVATE, 2, 0666);
@@ -285,13 +322,14 @@ int main(int argc, char const *argv[])
 
 		semop(sem_id, &str, 1);
 
-		write(sk, &res, sizeof(res));
+		write(sk_out, &res, sizeof(res));
 		printf("%.3f\n", res);
 
 		free(tinfo);
 		free(mem);
 	}
 
-
+	shutdown(sk_out, SHUT_WR);
+	shutdown(sk_in, SHUT_RD);
 	return 0;
 }
